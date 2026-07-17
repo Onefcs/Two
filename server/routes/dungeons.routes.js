@@ -9,5 +9,7 @@ router.use(requireAuth, requireCharacter);
 router.get('/', asyncHandler(controller.list));
 router.post('/:id/enter', asyncHandler(controller.enter));
 router.post('/:id/boss', asyncHandler(controller.bossBattle));
+router.post('/:id/boss/start', asyncHandler(controller.bossStart));
+router.post('/:id/boss/finish', asyncHandler(controller.bossFinish));
 
 module.exports = router;

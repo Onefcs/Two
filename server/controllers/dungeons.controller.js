@@ -18,4 +18,18 @@ async function bossBattle(req, res) {
   res.json(result);
 }
 
-module.exports = { list, enter, bossBattle };
+async function bossStart(req, res) {
+  const dungeonId = Number(req.params.id);
+  const result = await battleService.startBattle(req.user.id, req.character.id, dungeonId, { boss: true });
+  res.json(result);
+}
+
+async function bossFinish(req, res) {
+  const dungeonId = Number(req.params.id);
+  const { monsterId, outcome } = req.body || {};
+  if (!monsterId || !outcome) { res.status(400).json({ error: 'missing_fields' }); return; }
+  const result = await battleService.finishBattle(req.user.id, req.character.id, dungeonId, Number(monsterId), outcome, { boss: true });
+  res.json(result);
+}
+
+module.exports = { list, enter, bossBattle, bossStart, bossFinish };

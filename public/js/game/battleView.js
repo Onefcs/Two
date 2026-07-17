@@ -1,6 +1,6 @@
-const PLAYBACK_SPEEDUP = 4; // compress simulated 100ms ticks for snappier idle-game pacing
+const PLAYBACK_SPEEDUP = 4;
 
-// Replays a server-resolved battle log against the renderer in (compressed) real time.
+// Replays a pre-computed battle log against the renderer in (compressed) real time.
 // Returns a handle with cancel() to abort if the player navigates away mid-playback.
 export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEvent, onDone }) {
   let cancelled = false;
@@ -19,13 +19,17 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
   }
 
   function applyEvent(event) {
-    if (event.actorSide === 'player') renderer.setPlayerState('attack');
+    // Only trigger attack animation if the target is still alive
+    if (event.actorSide === 'player' && monsterHp > 0) {
+      renderer.setPlayerState('attack');
+    }
 
     if (event.type === 'damage') {
       if (event.targetSide === 'monster') {
         monsterHp = Math.max(0, event.targetHp);
         renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.68 });
         renderer.addFloatingText(`-${event.damage}${event.crit ? '!' : ''}`, event.crit ? '#ffd76a' : '#f2716c', 'monster');
+        if (monsterHp === 0) renderer.setPlayerState('idle');
       } else {
         playerHp = Math.max(0, event.targetHp);
         renderer.setPlayerHpPct(playerHp / playerMaxHp);
@@ -40,6 +44,7 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
       if (event.targetSide === 'monster') {
         monsterHp = Math.max(0, event.targetHp);
         renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.68 });
+        if (monsterHp === 0) renderer.setPlayerState('idle');
       } else {
         playerHp = Math.max(0, event.targetHp);
         renderer.setPlayerHpPct(playerHp / playerMaxHp);

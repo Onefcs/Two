@@ -6,9 +6,11 @@ import { setupCanvas } from '../game/canvas.js';
 import { createRenderer } from '../game/renderer.js';
 import { createLoop } from '../game/loop.js';
 import { playBattleLog } from '../game/battleView.js';
+import { simulateBattle } from '../game/battleSim.js';
 import { formatNumber } from '../utils/format.js';
 
 const RUN_DURATION_MS = 3000;
+const APPROACH_DURATION_MS = 800;
 
 export const gameScreen = {
   container: null,
@@ -60,7 +62,6 @@ export const gameScreen = {
     ]);
 
     mount(this.container, el('div', { class: 'game-screen' }, [canvasWrap]));
-    this.logPanel = null;
     this.bossRow = bossRow;
 
     if (!currentDungeon) {
@@ -130,12 +131,6 @@ export const gameScreen = {
     this.runPhase(dungeon);
   },
 
-  logLine(text) {
-    if (!this.logPanel) return;
-    this.logPanel.insertBefore(el('div', {}, text), this.logPanel.firstChild);
-    while (this.logPanel.children.length > 20) this.logPanel.removeChild(this.logPanel.lastChild);
-  },
-
   runPhase(dungeon) {
     if (this.destroyed) return;
     this.rendererHandle.setPlayerState('run');
@@ -146,7 +141,28 @@ export const gameScreen = {
 
   async fightBoss(dungeon) {
     if (this.phaseTimer) clearTimeout(this.phaseTimer);
+    this.battleHandle?.cancel();
     this.startBattle(dungeon, { boss: true });
+  },
+
+  // Smoothly slides monster from off-screen (x=1.2) to battle position (x=0.68)
+  animateMonsterApproach(monsterName) {
+    return new Promise((resolve) => {
+      if (this.destroyed) { resolve(); return; }
+      const start = performance.now();
+      const fromX = 1.2;
+      const toX = 0.68;
+      const tick = () => {
+        if (this.destroyed) { resolve(); return; }
+        const t = Math.min(1, (performance.now() - start) / APPROACH_DURATION_MS);
+        // ease-out cubic
+        const ease = 1 - Math.pow(1 - t, 3);
+        this.rendererHandle.setMonster({ name: monsterName, hpPct: 1, x: fromX + (toX - fromX) * ease });
+        if (t < 1) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
   },
 
   async startBattle(dungeon, { boss }) {
@@ -154,11 +170,12 @@ export const gameScreen = {
     this.rendererHandle.setPlayerState('idle');
     this.rendererHandle.setSpeedFactor(0);
 
-    let result;
+    // 1. Fetch monster + player data from server
+    let startResult;
     try {
-      result = boss
-        ? await api.post(`/dungeons/${dungeon.id}/boss`)
-        : await api.post('/battles/resolve', { dungeonId: dungeon.id });
+      startResult = boss
+        ? await api.post(`/dungeons/${dungeon.id}/boss/start`)
+        : await api.post('/battles/start', { dungeonId: dungeon.id });
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'network_error';
       toast(`Ошибка боя: ${msg}`);
@@ -167,39 +184,64 @@ export const gameScreen = {
     }
     if (this.destroyed) return;
 
-    const { character } = getState();
-    const monsterMaxHp = result.monster.hp;
-    this.rendererHandle.setMonster({ name: result.monster.name, hpPct: 1, x: 0.68 });
-    this.rendererHandle.setPlayerHpPct(1);
+    // 2. Simulate battle on client
+    const { outcome, log } = simulateBattle(
+      { id: startResult.player.id, stats: startResult.player.stats, skills: startResult.player.skills },
+      { id: startResult.monster.id, stats: startResult.monster.stats, skills: startResult.monster.skills || [] }
+    );
 
+    const monsterMaxHp = startResult.monster.stats.hp;
+    const { character } = getState();
+
+    // 3. Monster runs toward player
+    this.rendererHandle.setMonster({ name: startResult.monster.name, hpPct: 1, x: 1.2 });
+    this.rendererHandle.setPlayerHpPct(1);
+    await this.animateMonsterApproach(startResult.monster.name);
+    if (this.destroyed) return;
+
+    // 4. Play battle log animation
     this.battleHandle = playBattleLog({
       renderer: this.rendererHandle,
-      log: result.log,
+      log,
       monsterMaxHp,
       playerMaxHp: character.effectiveStats.hp,
-      onDone: () => {
+      onDone: async () => {
         if (this.destroyed) return;
         this.rendererHandle.setMonster(null);
-        setCharacter({ ...result.character, liveHp: undefined });
 
-        if (result.outcome === 'win') {
-          const lootText = result.rewards.items.length > 0
-            ? ` +${result.rewards.items.map((i) => i.name).join(', ')}`
-            : '';
-          this.logLine(`✅ Победа над ${result.monster.name}: +${formatNumber(result.rewards.xp)} XP, +${formatNumber(result.rewards.gold)} золота${lootText}`);
-        } else if (result.outcome === 'loss') {
-          this.logLine(`💀 Поражение от ${result.monster.name}`);
-        } else {
-          this.logLine(`⏱ Бой с ${result.monster.name} затянулся без победителя`);
+        // 5. Report outcome to server → get rewards + updated character
+        let finishResult;
+        try {
+          finishResult = boss
+            ? await api.post(`/dungeons/${dungeon.id}/boss/finish`, {
+                monsterId: startResult.monster.id, outcome,
+              })
+            : await api.post('/battles/finish', {
+                dungeonId: dungeon.id, monsterId: startResult.monster.id, outcome,
+              });
+        } catch (err) {
+          void err;
+          // Continue the run loop even if the server call fails
+          this.phaseTimer = setTimeout(() => this.runPhase(dungeon), 1200);
+          return;
         }
 
-        if (boss && result.outcome === 'win') {
+        setCharacter({ ...finishResult.character, liveHp: undefined });
+
+        if (outcome === 'win') {
+          const lootText = finishResult.rewards.items.length > 0
+            ? ` +${finishResult.rewards.items.map((i) => i.name).join(', ')}`
+            : '';
+          void lootText; // log removed from UI; could show toast here if desired
+        }
+
+        if (boss && outcome === 'win') {
           this.render();
         } else {
           this.phaseTimer = setTimeout(() => this.runPhase(dungeon), 1200);
         }
       },
     });
-    this.battleHandle.setMonsterName(result.monster.name);
+    this.battleHandle.setMonsterName(startResult.monster.name);
   },
 };

@@ -7,5 +7,7 @@ const router = express.Router();
 router.use(requireAuth, requireCharacter);
 
 router.post('/resolve', asyncHandler(controller.resolve));
+router.post('/start', asyncHandler(controller.start));
+router.post('/finish', asyncHandler(controller.finish));
 
 module.exports = router;
