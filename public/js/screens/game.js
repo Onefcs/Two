@@ -49,18 +49,21 @@ export const gameScreen = {
     const { character } = getState();
     const currentDungeon = this.dungeons.find((d) => d.id === character.currentDungeonId) || null;
 
-    const dungeonBar = el('div', { class: 'panel', style: 'margin:12px 12px 0;padding:8px 12px;' }, [
+    const dungeonBar = el('div', { class: 'game-dungeon-bar' }, [
       el('div', { class: 'row' }, [
-        el('div', {}, currentDungeon ? `📍 ${currentDungeon.name}` : 'Подземелье не выбрано'),
+        el('div', { style: 'font-size:13px;font-weight:600;' }, currentDungeon ? `📍 ${currentDungeon.name}` : 'Подземелье не выбрано'),
         el('button', { class: 'btn small', onClick: () => this.renderDungeonPicker() }, 'Сменить'),
       ]),
     ]);
 
+    const logPanel = el('div', { class: 'game-log' });
     const canvasWrap = el('div', { class: 'game-canvas-wrap' }, [el('canvas', { id: 'gameCanvas' })]);
     const bossRow = el('div', { class: 'game-controls' });
-    const logPanel = el('div', { class: 'game-log' });
 
-    mount(this.container, el('div', {}, [dungeonBar, canvasWrap, bossRow, logPanel]));
+    mount(this.container, el('div', { class: 'game-screen' }, [
+      el('div', { class: 'game-screen-top' }, [dungeonBar, logPanel]),
+      el('div', { class: 'game-screen-bottom' }, [canvasWrap, bossRow]),
+    ]));
     this.logPanel = logPanel;
     this.bossRow = bossRow;
 
@@ -109,7 +112,7 @@ export const gameScreen = {
     const canvas = this.container.querySelector('#gameCanvas') || document.getElementById('gameCanvas');
     if (!canvas) return;
     this.canvasHandle = setupCanvas(canvas);
-    this.rendererHandle = createRenderer(this.canvasHandle, dungeon.backgroundLayers?.colors || ['#1a1a2a', '#242438']);
+    this.rendererHandle = createRenderer(this.canvasHandle, dungeon);
     this.rendererHandle.setPlayerClass(character.class);
     this.rendererHandle.setPlayerState('run');
 

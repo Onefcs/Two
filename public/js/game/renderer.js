@@ -3,10 +3,13 @@ import { createAnimator } from './spriteAnimator.js';
 import { CHARACTER_SPRITES } from '../data/characterSprites.js';
 
 const GROUND_Y_RATIO = 0.78;
-const CHAR_HEIGHT_RATIO = 0.34;
+const CHAR_HEIGHT_RATIO = 0.36;
 
-export function createRenderer(canvasHandle, backgroundColors) {
-  const parallax = createParallax(backgroundColors);
+export function createRenderer(canvasHandle, dungeon) {
+  const parallax = createParallax(
+    dungeon.backgroundLayers?.colors || ['#1a1a2a'],
+    dungeon.key || 'whispering_forest',
+  );
   let animator = null;
   let playerX = 0.12; // fraction of width
   let monster = null; // { name, hpPct, x }
