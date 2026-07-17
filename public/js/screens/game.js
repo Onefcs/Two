@@ -49,22 +49,18 @@ export const gameScreen = {
     const { character } = getState();
     const currentDungeon = this.dungeons.find((d) => d.id === character.currentDungeonId) || null;
 
-    const dungeonBar = el('div', { class: 'game-dungeon-bar' }, [
-      el('div', { class: 'row' }, [
-        el('div', { style: 'font-size:13px;font-weight:600;' }, currentDungeon ? `📍 ${currentDungeon.name}` : 'Подземелье не выбрано'),
+    const bossRow = el('div', { class: 'game-hud-bottom' });
+    const canvasWrap = el('div', { class: 'game-canvas-wrap' }, [
+      el('canvas', { id: 'gameCanvas' }),
+      el('div', { class: 'game-hud-top' }, [
+        el('span', { class: 'game-hud-label' }, currentDungeon ? `📍 ${currentDungeon.name}` : 'Подземелье не выбрано'),
         el('button', { class: 'btn small', onClick: () => this.renderDungeonPicker() }, 'Сменить'),
       ]),
+      bossRow,
     ]);
 
-    const logPanel = el('div', { class: 'game-log' });
-    const canvasWrap = el('div', { class: 'game-canvas-wrap' }, [el('canvas', { id: 'gameCanvas' })]);
-    const bossRow = el('div', { class: 'game-controls' });
-
-    mount(this.container, el('div', { class: 'game-screen' }, [
-      el('div', { class: 'game-screen-top' }, [dungeonBar, logPanel]),
-      el('div', { class: 'game-screen-bottom' }, [canvasWrap, bossRow]),
-    ]));
-    this.logPanel = logPanel;
+    mount(this.container, el('div', { class: 'game-screen' }, [canvasWrap]));
+    this.logPanel = null;
     this.bossRow = bossRow;
 
     if (!currentDungeon) {
@@ -114,6 +110,7 @@ export const gameScreen = {
     this.canvasHandle = setupCanvas(canvas);
     this.rendererHandle = createRenderer(this.canvasHandle, dungeon);
     this.rendererHandle.setPlayerClass(character.class);
+    this.rendererHandle.setPlayerX(0.2);
     this.rendererHandle.setPlayerState('run');
 
     this.loop = createLoop((dt) => {
@@ -144,14 +141,6 @@ export const gameScreen = {
     this.rendererHandle.setPlayerState('run');
     this.rendererHandle.setMonster(null);
     this.rendererHandle.setSpeedFactor(1);
-    const start = performance.now();
-    const animateRun = () => {
-      if (this.destroyed) return;
-      const t = Math.min(1, (performance.now() - start) / RUN_DURATION_MS);
-      this.rendererHandle.setPlayerX(0.1 + t * 0.35);
-      if (t < 1) requestAnimationFrame(animateRun);
-    };
-    animateRun();
     this.phaseTimer = setTimeout(() => this.startBattle(dungeon, { boss: false }), RUN_DURATION_MS);
   },
 
@@ -162,7 +151,6 @@ export const gameScreen = {
 
   async startBattle(dungeon, { boss }) {
     if (this.destroyed) return;
-    this.rendererHandle.setPlayerX(0.16);
     this.rendererHandle.setPlayerState('idle');
     this.rendererHandle.setSpeedFactor(0);
 

@@ -109,15 +109,20 @@ input { font-family: inherit; }
 .class-card .desc { font-size: 10px; color: #8b93a7; line-height: 1.4; }
 
 /* ---------- game screen ---------- */
-.game-screen { display: flex; flex-direction: column; height: 100%; }
-.game-screen-top { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-.game-screen-bottom { flex-shrink: 0; }
-.game-dungeon-bar { padding: 8px 12px; background: #12151c; border-bottom: 1px solid #23283540; }
-.game-canvas-wrap { position: relative; width: 100%; height: 210px; background: #000; overflow: hidden; }
+.game-screen { height: 100%; position: relative; overflow: hidden; }
+.game-canvas-wrap { position: absolute; inset: 0; background: #000; }
 #gameCanvas { width: 100%; height: 100%; display: block; }
-.game-controls { display: flex; gap: 8px; padding: 8px 12px; background: #12151c; }
-.game-log { font-size: 11px; color: #9aa4bb; padding: 8px 12px; }
-.game-log div { padding: 3px 0; border-bottom: 1px solid #1e2330; }
+.game-hud-top {
+  position: absolute; top: 10px; left: 10px; right: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  z-index: 2; pointer-events: none;
+}
+.game-hud-top .btn { pointer-events: auto; background: #00000066; border-color: #ffffff30; backdrop-filter: blur(4px); }
+.game-hud-label { font-size: 12px; font-weight: 600; color: #ffffffcc; text-shadow: 0 1px 6px #000; }
+.game-hud-bottom {
+  position: absolute; bottom: 12px; right: 12px;
+  z-index: 2; display: flex; gap: 8px;
+}
 .floating-dmg { position: absolute; font-weight: 800; font-size: 14px; pointer-events: none; text-shadow: 0 1px 2px #000; }
 
 /* ---------- inventory ---------- */
