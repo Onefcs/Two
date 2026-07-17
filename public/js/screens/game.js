@@ -163,7 +163,7 @@ export const gameScreen = {
       if (this.destroyed) { resolve(); return; }
       const startTime = performance.now();
       const fromX = 1.5;
-      const toX = 0.68;
+      const toX = 0.40;
 
       const tick = () => {
         if (this.destroyed) { resolve(); return; }

@@ -27,7 +27,7 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
     if (event.type === 'damage') {
       if (event.targetSide === 'monster') {
         monsterHp = Math.max(0, event.targetHp);
-        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.68 });
+        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.40 });
         renderer.addFloatingText(`-${event.damage}${event.crit ? '!' : ''}`, event.crit ? '#ffd76a' : '#f2716c', 'monster');
         if (monsterHp === 0) renderer.setPlayerState('idle');
       } else {
@@ -43,7 +43,7 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
     } else if (event.type === 'dot') {
       if (event.targetSide === 'monster') {
         monsterHp = Math.max(0, event.targetHp);
-        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.68 });
+        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.40 });
         if (monsterHp === 0) renderer.setPlayerState('idle');
       } else {
         playerHp = Math.max(0, event.targetHp);
