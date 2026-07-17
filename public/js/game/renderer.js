@@ -2,8 +2,8 @@ import { createParallax } from './parallax.js';
 import { createAnimator } from './spriteAnimator.js';
 import { CHARACTER_SPRITES } from '../data/characterSprites.js';
 
-const GROUND_Y_RATIO = 0.78;
-const CHAR_HEIGHT_RATIO = 0.36;
+const GROUND_Y_RATIO = 0.90;
+const CHAR_HEIGHT_RATIO = 0.10;
 
 export function createRenderer(canvasHandle, dungeon) {
   const parallax = createParallax(

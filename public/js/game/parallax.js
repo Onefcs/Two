@@ -196,14 +196,14 @@ function groundGrad(ctx, w, h, baseYR, c1, c2) {
 // ---- per-dungeon draw functions ----
 
 function drawForest(ctx, w, h, off) {
-  skyGrad(ctx, w, h, [[0, '#060e08'], [0.45, '#0e2012'], [0.75, '#1a3820'], [1, '#233d28']]);
+  skyGrad(ctx, w, h, [[0, '#060e08'], [0.5, '#0e2012'], [0.82, '#1a3820'], [1, '#233d28']]);
   stars(ctx, w, h, off, 45, '#8fc8a0');
-  moon(ctx, w * 0.78, h * 0.14, h * 0.075, '#c8e6d0');
-  mtnLayer(ctx, w, h, 0.50, 0.16, '#091809', off, 0.015, 7);
-  mtnLayer(ctx, w, h, 0.58, 0.11, '#0f2212', off, 0.04, 9);
-  pineTrees(ctx, w, h, 0.78, 0.30, '#1a4828', '#122e18', off, 0.09, 15);
-  pineTrees(ctx, w, h, 0.78, 0.38, '#0d2410', '#091608', off, 0.21, 9);
-  groundGrad(ctx, w, h, 0.78, '#18381c', '#08100a');
+  moon(ctx, w * 0.78, h * 0.1, h * 0.075, '#c8e6d0');
+  mtnLayer(ctx, w, h, 0.58, 0.16, '#091809', off, 0.015, 7);
+  mtnLayer(ctx, w, h, 0.67, 0.11, '#0f2212', off, 0.04, 9);
+  pineTrees(ctx, w, h, 0.83, 0.30, '#1a4828', '#122e18', off, 0.09, 15);
+  pineTrees(ctx, w, h, 0.90, 0.38, '#0d2410', '#091608', off, 0.21, 9);
+  groundGrad(ctx, w, h, 0.90, '#18381c', '#08100a');
 }
 
 function drawCrypt(ctx, w, h, off) {
@@ -223,7 +223,7 @@ function drawCrypt(ctx, w, h, off) {
     const x = ((p(i * 7 + 3) * tile2 - sOff2) % tile2 + tile2) % tile2;
     if (x > w + 50) continue;
     const ph = h * (0.22 + p(i * 7) * 0.22), pw = h * 0.07;
-    const baseY = h * 0.78;
+    const baseY = h * 0.90;
     ctx.fillStyle = '#10192e'; ctx.strokeStyle = '#1e2e48'; ctx.lineWidth = 1.5;
     ctx.fillRect(x - pw / 2, baseY - ph, pw, ph);
     ctx.strokeRect(x - pw / 2, baseY - ph, pw, ph);
@@ -237,10 +237,10 @@ function drawCrypt(ctx, w, h, off) {
     const x = ((p(i * 5 + 11) * tile3 - sOff3) % tile3 + tile3) % tile3;
     if (x > w + 20) continue;
     const rh = h * (0.03 + p(i * 5) * 0.04), rw = rh * (1.2 + p(i * 5 + 2) * 0.8);
-    ctx.beginPath(); ctx.ellipse(x, h * 0.77, rw, rh, p(i) * 0.8, 0, 6.28); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, h * 0.89, rw, rh, p(i) * 0.8, 0, 6.28); ctx.fill();
   }
   dustParticles(ctx, w, h, off, 28, '#3a60a0', 0.08, 0.7);
-  groundGrad(ctx, w, h, 0.78, '#141e34', '#07091a');
+  groundGrad(ctx, w, h, 0.90, '#141e34', '#07091a');
 }
 
 function drawAshen(ctx, w, h, off) {
@@ -261,12 +261,12 @@ function drawAshen(ctx, w, h, off) {
     ctx.fillStyle = wg; ctx.fillRect(0, 0, w, h * 0.45);
   }
   ctx.globalAlpha = 1;
-  mtnLayer(ctx, w, h, 0.55, 0.12, '#200808', off, 0.015, 6);
-  mtnLayer(ctx, w, h, 0.63, 0.09, '#300c0c', off, 0.04, 8);
-  deadTrees(ctx, w, h, 0.78, 0.32, '#160404', off, 0.1, 13);
-  deadTrees(ctx, w, h, 0.78, 0.22, '#0e0303', off, 0.22, 8);
+  mtnLayer(ctx, w, h, 0.63, 0.12, '#200808', off, 0.015, 6);
+  mtnLayer(ctx, w, h, 0.73, 0.09, '#300c0c', off, 0.04, 8);
+  deadTrees(ctx, w, h, 0.90, 0.32, '#160404', off, 0.1, 13);
+  deadTrees(ctx, w, h, 0.90, 0.22, '#0e0303', off, 0.22, 8);
   dustParticles(ctx, w, h, off, 55, '#907060', 0.12, 0.82);
-  groundGrad(ctx, w, h, 0.78, '#240c0c', '#0d0404');
+  groundGrad(ctx, w, h, 0.90, '#240c0c', '#0d0404');
 }
 
 function drawFrozen(ctx, w, h, off) {
@@ -283,12 +283,12 @@ function drawFrozen(ctx, w, h, off) {
     ctx.fillStyle = ag; ctx.fillRect(0, 0, w, h * 0.55);
   }
   ctx.globalAlpha = 1;
-  mtnLayer(ctx, w, h, 0.48, 0.22, '#0b1c2c', off, 0.012, 5);
-  mtnLayer(ctx, w, h, 0.56, 0.14, '#122438', off, 0.033, 7);
-  iceSpires(ctx, w, h, 0.78, 0.33, '#1a3a55', '#60b0d0', off, 0.085, 15);
-  iceSpires(ctx, w, h, 0.78, 0.22, '#0e2238', '#3888b8', off, 0.2, 10);
+  mtnLayer(ctx, w, h, 0.55, 0.22, '#0b1c2c', off, 0.012, 5);
+  mtnLayer(ctx, w, h, 0.65, 0.14, '#122438', off, 0.033, 7);
+  iceSpires(ctx, w, h, 0.90, 0.33, '#1a3a55', '#60b0d0', off, 0.085, 15);
+  iceSpires(ctx, w, h, 0.90, 0.22, '#0e2238', '#3888b8', off, 0.2, 10);
   dustParticles(ctx, w, h, off, 65, '#c8e4f8', 0.09, 0.88);
-  groundGrad(ctx, w, h, 0.78, '#183048', '#08121e');
+  groundGrad(ctx, w, h, 0.90, '#183048', '#08121e');
 }
 
 function drawAbyss(ctx, w, h, off) {
@@ -309,12 +309,12 @@ function drawAbyss(ctx, w, h, off) {
     ctx.lineWidth = 4; ctx.globalAlpha = pulse * 0.2; ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  voidRocks(ctx, w, h, 0.52, 0.2, '#180c30', off, 0.018, 10);
-  voidRocks(ctx, w, h, 0.64, 0.13, '#110820', off, 0.055, 8);
-  crystals(ctx, w, h, 0.78, 0.3, '#3a1868', '#a060e8', off, 0.1, 13);
-  crystals(ctx, w, h, 0.78, 0.2, '#26103a', '#7840c0', off, 0.22, 9);
+  voidRocks(ctx, w, h, 0.60, 0.2, '#180c30', off, 0.018, 10);
+  voidRocks(ctx, w, h, 0.74, 0.13, '#110820', off, 0.055, 8);
+  crystals(ctx, w, h, 0.90, 0.3, '#3a1868', '#a060e8', off, 0.1, 13);
+  crystals(ctx, w, h, 0.90, 0.2, '#26103a', '#7840c0', off, 0.22, 9);
   dustParticles(ctx, w, h, off, 45, '#8050d0', 0.11, 0.82);
-  groundGrad(ctx, w, h, 0.78, '#180830', '#060214');
+  groundGrad(ctx, w, h, 0.90, '#180830', '#060214');
 }
 
 const THEMES = {
