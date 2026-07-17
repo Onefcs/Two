@@ -191,8 +191,6 @@ export function createRenderer(canvasHandle, dungeon) {
     // Render parallax at 30fps (every other frame)
     if (bgTick % 2 === 0) {
       parallax.draw(bgCtx, width, height);
-      bgCtx.fillStyle = '#00000030';
-      bgCtx.fillRect(0, height * GROUND_Y_RATIO, width, height - height * GROUND_Y_RATIO);
     }
     bgTick++;
 
