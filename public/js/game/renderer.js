@@ -11,11 +11,16 @@ export function createRenderer(canvasHandle, dungeon) {
     dungeon.key || 'whispering_forest',
   );
   let animator = null;
-  let playerX = 0.12; // fraction of width
-  let monster = null; // { name, hpPct, x }
-  let floatingTexts = []; // { text, color, x, y, life, target }
+  let playerX = 0.12;
+  let monster = null;
+  let floatingTexts = [];
   let playerHpPct = 1;
   let speedFactor = 1;
+
+  // OffscreenCanvas: parallax drawn at 30fps, blitted every frame
+  let bgCanvas = null;
+  let bgCtx = null;
+  let bgTick = 0;
 
   function setPlayerClass(cls) {
     animator = createAnimator(CHARACTER_SPRITES[cls]);
@@ -63,12 +68,25 @@ export function createRenderer(canvasHandle, dungeon) {
     const ctx = canvasHandle.ctx;
     const width = canvasHandle.width();
     const height = canvasHandle.height();
+
+    // Sync offscreen canvas size
+    if (!bgCanvas || bgCanvas.width !== width || bgCanvas.height !== height) {
+      bgCanvas = new OffscreenCanvas(width, height);
+      bgCtx = bgCanvas.getContext('2d');
+      bgTick = 0;
+    }
+    // Render parallax at 30fps (every other frame)
+    if (bgTick % 2 === 0) {
+      parallax.draw(bgCtx, width, height);
+      bgCtx.fillStyle = '#00000030';
+      bgCtx.fillRect(0, height * GROUND_Y_RATIO, width, height - height * GROUND_Y_RATIO);
+    }
+    bgTick++;
+
     ctx.clearRect(0, 0, width, height);
-    parallax.draw(ctx, width, height);
+    ctx.drawImage(bgCanvas, 0, 0);
 
     const groundY = height * GROUND_Y_RATIO;
-    ctx.fillStyle = '#00000030';
-    ctx.fillRect(0, groundY, width, height - groundY);
 
     const charH = height * CHAR_HEIGHT_RATIO;
     const px = width * playerX;

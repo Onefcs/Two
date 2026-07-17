@@ -16,16 +16,19 @@ function skyGrad(ctx, w, h, stops) {
 }
 
 function stars(ctx, w, h, off, count, color) {
+  // Single path for all stars — one fill() call instead of N
   const tile = w * 2;
   ctx.fillStyle = color;
+  ctx.globalAlpha = 0.45 + Math.sin(off * 0.018) * 0.1;
+  ctx.beginPath();
   for (let i = 0; i < count; i++) {
     const x = ((p(i) * tile - off * 0.004) % tile + tile) % tile;
     if (x > w) continue;
     const y = p(i + 77) * h * 0.58;
     const r = p(i + 155) * 1.1 + 0.3;
-    ctx.globalAlpha = 0.35 + Math.sin(off * 0.04 + i * 2.1) * 0.25;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
+    ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.28);
   }
+  ctx.fill();
   ctx.globalAlpha = 1;
 }
 
@@ -57,26 +60,45 @@ function mtnLayer(ctx, w, h, baseYR, ampR, color, off, spd, peaks) {
 }
 
 function pineTrees(ctx, w, h, baseYR, hR, c1, c2, off, spd, count) {
+  // Batch all same-colour geometry into 3 fill() calls instead of count×4
   const baseY = h * baseYR, tH = h * hR, tile = w * 1.6;
   const shift = (off * spd) % tile;
+
+  const trees = [];
   for (let rep = -1; rep <= 2; rep++) {
     for (let i = 0; i < count; i++) {
       const x = rep * tile - shift + p(i + rep * 31 + 7) * tile;
       if (x < -tH || x > w + tH) continue;
-      const hv = tH * (0.72 + p(i + rep * 17) * 0.56);
-      const tw = hv * 0.44;
-      ctx.fillStyle = '#1a0e06';
-      ctx.fillRect(x - hv * 0.04, baseY - hv * 0.28, hv * 0.08, hv * 0.28);
-      for (let t = 0; t < 3; t++) {
-        ctx.fillStyle = t % 2 === 0 ? c1 : c2;
-        const ty = baseY - hv * (0.28 + t * 0.23);
-        const tw2 = tw * (1 - t * 0.24);
-        ctx.beginPath(); ctx.moveTo(x, ty - hv * 0.23);
-        ctx.lineTo(x - tw2 / 2, ty); ctx.lineTo(x + tw2 / 2, ty);
-        ctx.closePath(); ctx.fill();
-      }
+      trees.push({ x, hv: tH * (0.72 + p(i + rep * 17) * 0.56) });
     }
   }
+
+  ctx.fillStyle = '#1a0e06';
+  ctx.beginPath();
+  for (const { x, hv } of trees) {
+    const tw = ~~(hv * 0.08) || 1, th = ~~(hv * 0.28) || 1;
+    ctx.rect(~~(x - hv * 0.04), ~~(baseY - hv * 0.28), tw, th);
+  }
+  ctx.fill();
+
+  ctx.fillStyle = c1;
+  ctx.beginPath();
+  for (const { x, hv } of trees) {
+    const tw = hv * 0.44;
+    for (const t of [0, 2]) {
+      const ty = baseY - hv * (0.28 + t * 0.23), tw2 = tw * (1 - t * 0.24);
+      ctx.moveTo(x, ty - hv * 0.23); ctx.lineTo(x - tw2 / 2, ty); ctx.lineTo(x + tw2 / 2, ty);
+    }
+  }
+  ctx.fill();
+
+  ctx.fillStyle = c2;
+  ctx.beginPath();
+  for (const { x, hv } of trees) {
+    const tw2 = hv * 0.44 * 0.76, ty = baseY - hv * 0.51;
+    ctx.moveTo(x, ty - hv * 0.23); ctx.lineTo(x - tw2 / 2, ty); ctx.lineTo(x + tw2 / 2, ty);
+  }
+  ctx.fill();
 }
 
 function deadTrees(ctx, w, h, baseYR, hR, color, off, spd, count) {
@@ -107,29 +129,36 @@ function deadTrees(ctx, w, h, baseYR, hR, color, off, spd, count) {
 function iceSpires(ctx, w, h, baseYR, hR, c1, c2, off, spd, count) {
   const baseY = h * baseYR, sH = h * hR, tile = w * 1.6;
   const shift = (off * spd) % tile;
+  const spires = [];
   for (let rep = -1; rep <= 2; rep++) {
     for (let i = 0; i < count; i++) {
       const x = rep * tile - shift + p(i + rep * 23 + 5) * tile;
       if (x < -sH || x > w + sH) continue;
-      const hv = sH * (0.38 + p(i + rep * 19) * 0.95);
-      const sw = hv * 0.2;
-      ctx.fillStyle = c1;
-      ctx.beginPath(); ctx.moveTo(x, baseY - hv);
-      ctx.lineTo(x - sw, baseY); ctx.lineTo(x + sw, baseY);
-      ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 0.4; ctx.fillStyle = c2;
-      ctx.beginPath(); ctx.moveTo(x, baseY - hv);
-      ctx.lineTo(x, baseY); ctx.lineTo(x + sw, baseY);
-      ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 1;
+      spires.push({ x, hv: sH * (0.38 + p(i + rep * 19) * 0.95) });
     }
   }
+  ctx.fillStyle = c1;
+  ctx.beginPath();
+  for (const { x, hv } of spires) {
+    const sw = hv * 0.2;
+    ctx.moveTo(x, baseY - hv); ctx.lineTo(x - sw, baseY); ctx.lineTo(x + sw, baseY);
+  }
+  ctx.fill();
+  ctx.globalAlpha = 0.4; ctx.fillStyle = c2;
+  ctx.beginPath();
+  for (const { x, hv } of spires) {
+    const sw = hv * 0.2;
+    ctx.moveTo(x, baseY - hv); ctx.lineTo(x, baseY); ctx.lineTo(x + sw, baseY);
+  }
+  ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 function voidRocks(ctx, w, h, baseYR, rockHR, color, off, spd, count) {
   const baseY = h * baseYR, rH = h * rockHR, tile = w * 1.6;
   const shift = (off * spd) % tile;
   ctx.fillStyle = color;
+  ctx.beginPath();
   for (let rep = -1; rep <= 2; rep++) {
     for (let i = 0; i < count; i++) {
       const x = rep * tile - shift + p(i + rep * 41 + 11) * tile;
@@ -137,51 +166,58 @@ function voidRocks(ctx, w, h, baseYR, rockHR, color, off, spd, count) {
       const hv = rH * (0.28 + p(i + rep * 17) * 0.75);
       const rw = hv * (0.9 + p(i + 50) * 0.6);
       const floatY = baseY - hv * 0.5 - Math.sin(off * 0.018 + i * 1.7) * 10;
-      ctx.beginPath();
+      ctx.moveTo(x + rw / 2, floatY);
       ctx.ellipse(x, floatY, rw / 2, hv / 2, p(i) * 0.6, 0, 6.28);
-      ctx.fill();
     }
   }
+  ctx.fill();
 }
 
 function crystals(ctx, w, h, baseYR, hR, c1, c2, off, spd, count) {
   const baseY = h * baseYR, cH = h * hR, tile = w * 1.6;
   const shift = (off * spd) % tile;
+  const crys = [];
   for (let rep = -1; rep <= 2; rep++) {
     for (let i = 0; i < count; i++) {
       const x = rep * tile - shift + p(i + rep * 37 + 9) * tile;
       if (x < -cH || x > w + cH) continue;
-      const hv = cH * (0.28 + p(i + rep * 13) * 0.95);
-      const cw = hv * 0.2;
-      const pulse = 0.6 + Math.sin(off * 0.045 + i * 2.9) * 0.22;
-      ctx.fillStyle = c1; ctx.globalAlpha = 0.8;
-      ctx.beginPath(); ctx.moveTo(x, baseY - hv);
-      ctx.lineTo(x - cw, baseY - hv * 0.32);
-      ctx.lineTo(x - cw * 0.45, baseY);
-      ctx.lineTo(x + cw * 0.45, baseY);
-      ctx.lineTo(x + cw, baseY - hv * 0.32);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = c2; ctx.globalAlpha = pulse * 0.55;
-      ctx.beginPath(); ctx.moveTo(x, baseY - hv);
-      ctx.lineTo(x + cw, baseY - hv * 0.32);
-      ctx.lineTo(x + cw * 0.45, baseY);
-      ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 1;
+      crys.push({ x, hv: cH * (0.28 + p(i + rep * 13) * 0.95) });
     }
   }
+  ctx.fillStyle = c1; ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  for (const { x, hv } of crys) {
+    const cw = hv * 0.2;
+    ctx.moveTo(x, baseY - hv);
+    ctx.lineTo(x - cw, baseY - hv * 0.32); ctx.lineTo(x - cw * 0.45, baseY);
+    ctx.lineTo(x + cw * 0.45, baseY); ctx.lineTo(x + cw, baseY - hv * 0.32);
+  }
+  ctx.fill();
+  const pulse = 0.5 + Math.sin(off * 0.04) * 0.15;
+  ctx.fillStyle = c2; ctx.globalAlpha = pulse * 0.55;
+  ctx.beginPath();
+  for (const { x, hv } of crys) {
+    const cw = hv * 0.2;
+    ctx.moveTo(x, baseY - hv);
+    ctx.lineTo(x + cw, baseY - hv * 0.32); ctx.lineTo(x + cw * 0.45, baseY);
+  }
+  ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 function dustParticles(ctx, w, h, off, count, color, spd, maxYR) {
+  // All particles in one path — one fill() call
   const tile = w * 2, maxY = h * maxYR;
-  ctx.fillStyle = color;
+  ctx.fillStyle = color; ctx.globalAlpha = 0.35;
+  ctx.beginPath();
   for (let i = 0; i < count; i++) {
     const x = ((p(i * 3) * tile - off * spd) % tile + tile) % tile;
     if (x > w) continue;
     const y = p(i * 3 + 1) * maxY + Math.sin(off * 0.02 + i * 1.9) * 9;
-    const r = p(i * 3 + 2) * 1.8 + 0.4;
-    ctx.globalAlpha = 0.18 + p(i * 3 + 2) * 0.45;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.28); ctx.fill();
+    const r = p(i * 3 + 2) * 1.6 + 0.4;
+    ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.28);
   }
+  ctx.fill();
   ctx.globalAlpha = 1;
 }
 
