@@ -25,4 +25,18 @@ async function finish(req, res) {
   res.json(result);
 }
 
-module.exports = { resolve, start, finish };
+async function dungeonData(req, res) {
+  const { dungeonId } = req.query;
+  if (!dungeonId) throw httpError(400, 'dungeon_required');
+  const result = await battleService.getDungeonData(req.user.id, req.character.id, Number(dungeonId));
+  res.json(result);
+}
+
+async function sync(req, res) {
+  const { dungeonId, battles } = req.body || {};
+  if (!dungeonId || !Array.isArray(battles)) throw httpError(400, 'missing_fields');
+  const result = await battleService.syncBattles(req.user.id, req.character.id, Number(dungeonId), battles);
+  res.json(result);
+}
+
+module.exports = { resolve, start, finish, dungeonData, sync };

@@ -14,6 +14,19 @@ const APPROACH_DURATION_MS = 1200;
 const MONSTER_BATTLE_X = 0.35;
 const RANGED_CLASSES = new Set(['mage', 'archer']);
 const PROJECTILE_TYPE = { mage: 'spell', archer: 'arrow' };
+const SYNC_INTERVAL_MS = 30_000;
+
+function xpForLevel(n) { return Math.round(100 * Math.pow(n, 2.2)); }
+
+function weightedPick(items) {
+  const total = items.reduce((s, m) => s + m.spawnWeight, 0);
+  let r = Math.random() * total;
+  for (const m of items) {
+    r -= m.spawnWeight;
+    if (r <= 0) return m;
+  }
+  return items[items.length - 1];
+}
 
 export const gameScreen = {
   container: null,
@@ -24,8 +37,10 @@ export const gameScreen = {
   phaseTimer: null,
   battleHandle: null,
   dungeons: [],
-  pendingBattle: null,
-  pendingBattlePromise: null,
+  dungeonData: null,      // { player, monsters[] } — cached per dungeon
+  battleBuffer: [],       // [{ monsterId, outcome }] — flushed every 30s
+  syncTimer: null,
+  currentDungeonId: null,
 
   async mount(container) {
     this.container = container;
@@ -49,6 +64,8 @@ export const gameScreen = {
     this.loop?.stop();
     this.battleHandle?.cancel();
     if (this.phaseTimer) clearTimeout(this.phaseTimer);
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this._flushBattleBuffer();
     this.rendererHandle?.destroy();
   },
 
@@ -111,6 +128,9 @@ export const gameScreen = {
   },
 
   startCanvas(dungeon, character) {
+    // Flush any buffered battles from the previous dungeon before switching
+    this._flushBattleBuffer();
+
     const canvas = this.container.querySelector('#gameCanvas') || document.getElementById('gameCanvas');
     if (!canvas) return;
     this.canvasHandle = setupCanvas(canvas);
@@ -133,7 +153,75 @@ export const gameScreen = {
       }, dungeon.bossDefeated ? '👑 Босс повержен (повторить)' : '👑 Бой с боссом')
     );
 
+    this.dungeonData = null;
+    this.battleBuffer = [];
+    this.currentDungeonId = dungeon.id;
+
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.syncTimer = setInterval(() => this._flushBattleBuffer(), SYNC_INTERVAL_MS);
+
+    // Fetch dungeon data (monsters + player stats); start running immediately
+    this._loadDungeonData(dungeon);
     this.runPhase(dungeon);
+  },
+
+  async _loadDungeonData(dungeon) {
+    try {
+      const data = await api.get(`/battles/dungeon-data?dungeonId=${dungeon.id}`);
+      if (!this.destroyed && this.currentDungeonId === dungeon.id) {
+        this.dungeonData = data;
+      }
+    } catch {
+      // Will retry when startBattle sees null dungeonData
+    }
+  },
+
+  _pickMonster() {
+    const monsters = this.dungeonData?.monsters;
+    if (!monsters?.length) return null;
+    return weightedPick(monsters);
+  },
+
+  _applyRewardsLocally(monster, outcome) {
+    if (outcome !== 'win') return;
+    const char = getState().character;
+    if (!char) return;
+
+    const xpGain = monster.xpReward;
+    const goldGain = Math.floor(Math.random() * (monster.goldMax - monster.goldMin + 1)) + monster.goldMin;
+
+    let { level, xp, gold } = char;
+    gold += goldGain;
+    xp += xpGain;
+
+    while (xp >= xpForLevel(level)) {
+      xp -= xpForLevel(level);
+      level += 1;
+    }
+
+    setCharacter({ ...char, gold, xp, level, xpForNextLevel: xpForLevel(level) });
+  },
+
+  async _flushBattleBuffer() {
+    if (!this.battleBuffer.length || !this.currentDungeonId) return;
+    const dungeonId = this.currentDungeonId;
+    const toSend = this.battleBuffer.splice(0);
+    try {
+      const result = await api.post('/battles/sync', { dungeonId, battles: toSend });
+      if (result?.character && !this.destroyed) {
+        const prevLevel = getState().character?.level ?? 0;
+        setCharacter({ ...result.character, liveHp: undefined });
+        // Re-fetch dungeon data if player levelled up (new skills may unlock)
+        if (result.character.level > prevLevel && this.currentDungeonId === dungeonId) {
+          const dungeon = this.dungeons.find((d) => d.id === dungeonId);
+          if (dungeon) this._loadDungeonData(dungeon);
+        }
+      }
+    } catch {
+      // On failure, merge back capped at 200 to avoid infinite accumulation
+      const merged = [...toSend, ...this.battleBuffer].slice(0, 200);
+      this.battleBuffer = merged;
+    }
   },
 
   runPhase(dungeon) {
@@ -142,20 +230,12 @@ export const gameScreen = {
     this.rendererHandle.setMonster(null);
     this.rendererHandle.setSpeedFactor(1);
 
-    // Pre-fetch monster data during the run so approach starts instantly when run ends
-    this.pendingBattle = null;
-    this.pendingBattlePromise = api.post('/battles/start', { dungeonId: dungeon.id })
-      .then((data) => { this.pendingBattle = data; return data; })
-      .catch(() => null);
-
     this.phaseTimer = setTimeout(() => this.startBattle(dungeon, { boss: false }), RUN_DURATION_MS);
   },
 
   async fightBoss(dungeon) {
     if (this.phaseTimer) clearTimeout(this.phaseTimer);
     this.battleHandle?.cancel();
-    this.pendingBattle = null;
-    this.pendingBattlePromise = null;
     this.startBattle(dungeon, { boss: true });
   },
 
@@ -187,20 +267,37 @@ export const gameScreen = {
     this.rendererHandle.setSpeedFactor(0);
 
     let startResult;
-    try {
-      if (!boss && this.pendingBattle) {
-        startResult = this.pendingBattle;
-      } else if (!boss && this.pendingBattlePromise) {
-        startResult = await this.pendingBattlePromise;
-        if (!startResult) throw new Error('prefetch_failed');
-      } else {
-        startResult = await api.post(`/dungeons/${dungeon.id}/boss/start`);
+    if (!boss) {
+      if (!this.dungeonData) {
+        // Still loading dungeon data; retry shortly
+        this.phaseTimer = setTimeout(() => this.startBattle(dungeon, { boss: false }), 400);
+        return;
       }
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : 'network_error';
-      toast(`Ошибка боя: ${msg}`);
-      this.phaseTimer = setTimeout(() => this.runPhase(dungeon), 1500);
-      return;
+      const monster = this._pickMonster();
+      if (!monster) {
+        this.phaseTimer = setTimeout(() => this.runPhase(dungeon), 1000);
+        return;
+      }
+      startResult = {
+        monster: {
+          id: monster.id,
+          key: monster.key,
+          name: monster.name,
+          isBoss: false,
+          stats: monster.stats,
+          skills: monster.skills || [],
+        },
+        player: this.dungeonData.player,
+      };
+    } else {
+      try {
+        startResult = await api.post(`/dungeons/${dungeon.id}/boss/start`);
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : 'network_error';
+        toast(`Ошибка боя: ${msg}`);
+        this.phaseTimer = setTimeout(() => this.runPhase(dungeon), 1500);
+        return;
+      }
     }
     if (this.destroyed) return;
 
@@ -217,12 +314,10 @@ export const gameScreen = {
       ? () => this.rendererHandle.addProjectile(projType)
       : undefined;
 
-    // Approach control — stopped=true halts the animation (used when monster dies mid-approach)
     const approachControl = { stopped: false };
     this.rendererHandle.setPlayerHpPct(1);
 
     if (isRanged) {
-      // Ranged: monster runs in while player immediately starts attacking
       this.animateMonsterApproach(startResult.monster.name, approachControl);
 
       this.battleHandle = playBattleLog({
@@ -235,7 +330,6 @@ export const gameScreen = {
         onDone: () => this._onBattleDone(dungeon, startResult, outcome, boss),
       });
     } else {
-      // Melee: wait for monster to arrive, then fight
       await this.animateMonsterApproach(startResult.monster.name, approachControl);
       if (this.destroyed) return;
 
@@ -256,19 +350,24 @@ export const gameScreen = {
     if (this.destroyed) return;
     this.rendererHandle.setMonster(null);
 
-    const monsterId = startResult.monster.id;
-    const finishPath = boss ? `/dungeons/${dungeon.id}/boss/finish` : '/battles/finish';
-    const finishBody = boss
-      ? { monsterId, outcome }
-      : { dungeonId: dungeon.id, monsterId, outcome };
+    if (boss) {
+      api.post(`/dungeons/${dungeon.id}/boss/finish`, {
+        monsterId: startResult.monster.id,
+        outcome,
+      })
+        .then((r) => { if (!this.destroyed) setCharacter({ ...r.character, liveHp: undefined }); })
+        .catch(() => {});
 
-    api.post(finishPath, finishBody)
-      .then((r) => { if (!this.destroyed) setCharacter({ ...r.character, liveHp: undefined }); })
-      .catch(() => {});
-
-    if (boss && outcome === 'win') {
-      this.render();
+      if (outcome === 'win') {
+        this.render();
+      } else {
+        this.runPhase(dungeon);
+      }
     } else {
+      // Queue for 30s batch sync; apply gold/xp optimistically right now
+      this.battleBuffer.push({ monsterId: startResult.monster.id, outcome });
+      const localMonster = this.dungeonData?.monsters?.find((m) => m.id === startResult.monster.id);
+      if (localMonster) this._applyRewardsLocally(localMonster, outcome);
       this.runPhase(dungeon);
     }
   },

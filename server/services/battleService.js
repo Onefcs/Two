@@ -178,4 +178,105 @@ async function finishBattle(userId, characterId, dungeonId, monsterId, outcome, 
   return { outcome, rewards, character: updatedCharacter };
 }
 
-module.exports = { resolveBattle, startBattle, finishBattle, getSkillsForClass };
+async function getDungeonData(userId, characterId, dungeonId) {
+  const character = await characterService.getFullCharacter(characterId);
+  if (!character || character.userId !== userId) throw httpError(404, 'no_character');
+
+  const dungeon = await dungeonService.getDungeon(dungeonId);
+  if (character.level < dungeon.min_character_level) throw httpError(400, 'dungeon_locked');
+
+  const skills = await getSkillsForClass(character.class, character.level);
+  const { rows: monsters } = await pool.query(
+    'SELECT * FROM monsters WHERE dungeon_id = $1 AND is_boss = false ORDER BY id',
+    [dungeonId]
+  );
+
+  return {
+    player: {
+      id: character.id,
+      stats: character.effectiveStats,
+      skills,
+      level: character.level,
+    },
+    monsters: monsters.map((m) => ({
+      id: m.id,
+      key: m.key,
+      name: m.name,
+      spawnWeight: Number(m.spawn_weight),
+      xpReward: Number(m.xp_reward),
+      goldMin: Number(m.gold_reward_min),
+      goldMax: Number(m.gold_reward_max),
+      stats: {
+        hp: Number(m.hp),
+        attack: Number(m.attack),
+        defense: Number(m.defense),
+        attack_speed: Number(m.attack_speed),
+        crit_chance: Number(m.crit_chance),
+        crit_dmg: Number(m.crit_dmg),
+        lifesteal: 0,
+      },
+      skills: [],
+    })),
+  };
+}
+
+async function syncBattles(userId, characterId, dungeonId, battles) {
+  const character = await characterService.getFullCharacter(characterId);
+  if (!character || character.userId !== userId) throw httpError(404, 'no_character');
+
+  if (!Array.isArray(battles) || battles.length === 0) return { character };
+  if (battles.length > 150) throw httpError(400, 'too_many_battles');
+
+  const monsterIds = [...new Set(battles.map((b) => Number(b.monsterId)))];
+  const { rows: monsters } = await pool.query(
+    'SELECT * FROM monsters WHERE id = ANY($1) AND dungeon_id = $2 AND is_boss = false',
+    [monsterIds, dungeonId]
+  );
+  const monsterMap = new Map(monsters.map((m) => [m.id, m]));
+
+  const client = await pool.connect();
+  let totalXp = 0;
+  let totalGold = 0;
+  try {
+    await client.query('BEGIN');
+
+    for (const battle of battles) {
+      const { monsterId, outcome } = battle;
+      if (!['win', 'loss', 'timeout'].includes(outcome)) continue;
+      const monster = monsterMap.get(Number(monsterId));
+      if (!monster) continue;
+
+      let xp = 0;
+      let gold = 0;
+      if (outcome === 'win') {
+        xp = Number(monster.xp_reward);
+        gold = randomInt(Number(monster.gold_reward_min), Number(monster.gold_reward_max));
+        await lootService.rollLoot(client, characterId, monster.id);
+        totalXp += xp;
+        totalGold += gold;
+      }
+
+      await client.query(
+        `INSERT INTO battle_logs (character_id, dungeon_id, monster_id, outcome, xp_gained, gold_gained, loot)
+         VALUES ($1,$2,$3,$4,$5,$6,'[]')`,
+        [characterId, dungeonId, monster.id, outcome, xp, gold]
+      );
+    }
+
+    if (totalXp > 0 || totalGold > 0) {
+      await characterService.applyXpAndGold(client, characterId, totalXp, totalGold);
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  const updatedCharacter = await characterService.getFullCharacter(characterId);
+  return { character: updatedCharacter };
+}
+
+module.exports = { resolveBattle, startBattle, finishBattle, getSkillsForClass, getDungeonData, syncBattles };
