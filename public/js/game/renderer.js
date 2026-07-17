@@ -99,7 +99,7 @@ export function createRenderer(canvasHandle, dungeon) {
     if (monster) {
       const mx = width * (monster.x ?? 0.68);
       const mh = charH * 0.9;
-      const my = groundY - mh;
+      const my = groundY - mh + (monster.yOffset ?? 0);
       ctx.fillStyle = '#2a2f3d';
       ctx.strokeStyle = '#5a6478';
       ctx.lineWidth = 2;

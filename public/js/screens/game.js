@@ -10,7 +10,7 @@ import { simulateBattle } from '../game/battleSim.js';
 import { formatNumber } from '../utils/format.js';
 
 const RUN_DURATION_MS = 3000;
-const APPROACH_DURATION_MS = 800;
+const APPROACH_DURATION_MS = 1200;
 
 export const gameScreen = {
   container: null,
@@ -21,6 +21,9 @@ export const gameScreen = {
   phaseTimer: null,
   battleHandle: null,
   dungeons: [],
+  // Pre-fetched monster data so approach starts instantly when run ends
+  pendingBattle: null,
+  pendingBattlePromise: null,
 
   async mount(container) {
     this.container = container;
@@ -136,28 +139,41 @@ export const gameScreen = {
     this.rendererHandle.setPlayerState('run');
     this.rendererHandle.setMonster(null);
     this.rendererHandle.setSpeedFactor(1);
+
+    // Pre-fetch monster data during run so it's ready the moment the run ends
+    this.pendingBattle = null;
+    this.pendingBattlePromise = api.post('/battles/start', { dungeonId: dungeon.id })
+      .then((data) => { this.pendingBattle = data; return data; })
+      .catch(() => null);
+
     this.phaseTimer = setTimeout(() => this.startBattle(dungeon, { boss: false }), RUN_DURATION_MS);
   },
 
   async fightBoss(dungeon) {
     if (this.phaseTimer) clearTimeout(this.phaseTimer);
     this.battleHandle?.cancel();
+    this.pendingBattle = null;
+    this.pendingBattlePromise = null;
     this.startBattle(dungeon, { boss: true });
   },
 
-  // Smoothly slides monster from off-screen (x=1.2) to battle position (x=0.68)
+  // Monster runs from off-screen right toward battle position with a running bounce
   animateMonsterApproach(monsterName) {
     return new Promise((resolve) => {
       if (this.destroyed) { resolve(); return; }
-      const start = performance.now();
-      const fromX = 1.2;
+      const startTime = performance.now();
+      const fromX = 1.5;
       const toX = 0.68;
+
       const tick = () => {
         if (this.destroyed) { resolve(); return; }
-        const t = Math.min(1, (performance.now() - start) / APPROACH_DURATION_MS);
-        // ease-out cubic
-        const ease = 1 - Math.pow(1 - t, 3);
-        this.rendererHandle.setMonster({ name: monsterName, hpPct: 1, x: fromX + (toX - fromX) * ease });
+        const t = Math.min(1, (performance.now() - startTime) / APPROACH_DURATION_MS);
+        // ease-out quad — fast start, slows as monster reaches position
+        const ease = 1 - (1 - t) * (1 - t);
+        const x = fromX + (toX - fromX) * ease;
+        // vertical bounce — feet leave ground 5 times during approach, amplitude fades near end
+        const yOffset = -Math.abs(Math.sin(t * Math.PI * 5)) * 8 * (1 - t * 0.7);
+        this.rendererHandle.setMonster({ name: monsterName, hpPct: 1, x, yOffset });
         if (t < 1) requestAnimationFrame(tick);
         else resolve();
       };
@@ -170,12 +186,17 @@ export const gameScreen = {
     this.rendererHandle.setPlayerState('idle');
     this.rendererHandle.setSpeedFactor(0);
 
-    // 1. Fetch monster + player data from server
+    // Use pre-fetched data if available (normal battles), otherwise fetch now (boss)
     let startResult;
     try {
-      startResult = boss
-        ? await api.post(`/dungeons/${dungeon.id}/boss/start`)
-        : await api.post('/battles/start', { dungeonId: dungeon.id });
+      if (!boss && this.pendingBattle) {
+        startResult = this.pendingBattle;
+      } else if (!boss && this.pendingBattlePromise) {
+        startResult = await this.pendingBattlePromise;
+        if (!startResult) throw new Error('prefetch_failed');
+      } else {
+        startResult = await api.post(`/dungeons/${dungeon.id}/boss/start`);
+      }
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'network_error';
       toast(`Ошибка боя: ${msg}`);
@@ -184,7 +205,7 @@ export const gameScreen = {
     }
     if (this.destroyed) return;
 
-    // 2. Simulate battle on client
+    // Simulate battle client-side — instant, no network
     const { outcome, log } = simulateBattle(
       { id: startResult.player.id, stats: startResult.player.stats, skills: startResult.player.skills },
       { id: startResult.monster.id, stats: startResult.monster.stats, skills: startResult.monster.skills || [] }
@@ -193,52 +214,39 @@ export const gameScreen = {
     const monsterMaxHp = startResult.monster.stats.hp;
     const { character } = getState();
 
-    // 3. Monster runs toward player
-    this.rendererHandle.setMonster({ name: startResult.monster.name, hpPct: 1, x: 1.2 });
+    // Monster runs in from right
     this.rendererHandle.setPlayerHpPct(1);
     await this.animateMonsterApproach(startResult.monster.name);
     if (this.destroyed) return;
 
-    // 4. Play battle log animation
+    // Play battle animation
     this.battleHandle = playBattleLog({
       renderer: this.rendererHandle,
       log,
       monsterMaxHp,
       playerMaxHp: character.effectiveStats.hp,
-      onDone: async () => {
+      onDone: () => {
         if (this.destroyed) return;
         this.rendererHandle.setMonster(null);
 
-        // 5. Report outcome to server → get rewards + updated character
-        let finishResult;
-        try {
-          finishResult = boss
-            ? await api.post(`/dungeons/${dungeon.id}/boss/finish`, {
-                monsterId: startResult.monster.id, outcome,
-              })
-            : await api.post('/battles/finish', {
-                dungeonId: dungeon.id, monsterId: startResult.monster.id, outcome,
-              });
-        } catch (err) {
-          void err;
-          // Continue the run loop even if the server call fails
-          this.phaseTimer = setTimeout(() => this.runPhase(dungeon), 1200);
-          return;
-        }
+        // Report to server in background — don't block the run phase
+        const monsterId = startResult.monster.id;
+        const finishPath = boss
+          ? `/dungeons/${dungeon.id}/boss/finish`
+          : '/battles/finish';
+        const finishBody = boss
+          ? { monsterId, outcome }
+          : { dungeonId: dungeon.id, monsterId, outcome };
 
-        setCharacter({ ...finishResult.character, liveHp: undefined });
+        api.post(finishPath, finishBody)
+          .then((r) => { if (!this.destroyed) setCharacter({ ...r.character, liveHp: undefined }); })
+          .catch(() => {});
 
-        if (outcome === 'win') {
-          const lootText = finishResult.rewards.items.length > 0
-            ? ` +${finishResult.rewards.items.map((i) => i.name).join(', ')}`
-            : '';
-          void lootText; // log removed from UI; could show toast here if desired
-        }
-
+        // Immediately continue — no waiting
         if (boss && outcome === 'win') {
           this.render();
         } else {
-          this.phaseTimer = setTimeout(() => this.runPhase(dungeon), 1200);
+          this.runPhase(dungeon);
         }
       },
     });
