@@ -3,7 +3,7 @@ const PLAYBACK_SPEEDUP = 4;
 // Replays a pre-computed battle log against the renderer in (compressed) real time.
 // onMonsterDied fires the moment monster HP hits 0 (use it to stop approach animation).
 // Returns a handle with cancel() to abort if the player navigates away mid-playback.
-export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEvent, onMonsterDied, onDone }) {
+export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEvent, onMonsterDied, onPlayerAttack, onDone }) {
   let cancelled = false;
   let monsterHp = monsterMaxHp;
   let playerHp = playerMaxHp;
@@ -22,6 +22,7 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
   function applyEvent(event) {
     if (event.actorSide === 'player' && monsterHp > 0) {
       renderer.setPlayerState('attack');
+      onPlayerAttack?.();
     }
 
     if (event.type === 'damage') {

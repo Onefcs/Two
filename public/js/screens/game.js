@@ -13,6 +13,7 @@ const RUN_DURATION_MS = 3000;
 const APPROACH_DURATION_MS = 1200;
 const MONSTER_BATTLE_X = 0.35;
 const RANGED_CLASSES = new Set(['mage', 'archer']);
+const PROJECTILE_TYPE = { mage: 'spell', archer: 'arrow' };
 
 export const gameScreen = {
   container: null,
@@ -211,6 +212,10 @@ export const gameScreen = {
     const monsterMaxHp = startResult.monster.stats.hp;
     const { character } = getState();
     const isRanged = RANGED_CLASSES.has(character.class);
+    const projType = PROJECTILE_TYPE[character.class] ?? null;
+    const onPlayerAttack = projType
+      ? () => this.rendererHandle.addProjectile(projType)
+      : undefined;
 
     // Approach control — stopped=true halts the animation (used when monster dies mid-approach)
     const approachControl = { stopped: false };
@@ -225,6 +230,7 @@ export const gameScreen = {
         log,
         monsterMaxHp,
         playerMaxHp: character.effectiveStats.hp,
+        onPlayerAttack,
         onMonsterDied: () => { approachControl.stopped = true; },
         onDone: () => this._onBattleDone(dungeon, startResult, outcome, boss),
       });
@@ -238,6 +244,7 @@ export const gameScreen = {
         log,
         monsterMaxHp,
         playerMaxHp: character.effectiveStats.hp,
+        onPlayerAttack,
         onDone: () => this._onBattleDone(dungeon, startResult, outcome, boss),
       });
     }
