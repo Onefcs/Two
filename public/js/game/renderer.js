@@ -35,7 +35,9 @@ export function createRenderer(canvasHandle, dungeon) {
   }
 
   function setMonster(m) {
-    monster = m;
+    if (m === null) { monster = null; return; }
+    // Merge so approach animation can own x while battleView updates hpPct independently
+    monster = monster ? { ...monster, ...m } : m;
   }
 
   function setPlayerHpPct(pct) {
@@ -115,7 +117,7 @@ export function createRenderer(canvasHandle, dungeon) {
     }
 
     for (const ft of floatingTexts) {
-      const baseX = ft.target === 'monster' ? width * (monster?.x ?? 0.68) + 20 : px + charH * 0.3;
+      const baseX = ft.target === 'monster' ? width * (monster?.x ?? 0.40) + 20 : px + charH * 0.3;
       const baseY = (ft.target === 'monster' ? groundY - charH * 0.9 : py) - (ft.age / ft.life) * 30;
       ctx.globalAlpha = 1 - ft.age / ft.life;
       ctx.fillStyle = ft.color;

@@ -11,6 +11,8 @@ import { formatNumber } from '../utils/format.js';
 
 const RUN_DURATION_MS = 3000;
 const APPROACH_DURATION_MS = 1200;
+const MONSTER_BATTLE_X = 0.35;
+const RANGED_CLASSES = new Set(['mage', 'archer']);
 
 export const gameScreen = {
   container: null,
@@ -21,7 +23,6 @@ export const gameScreen = {
   phaseTimer: null,
   battleHandle: null,
   dungeons: [],
-  // Pre-fetched monster data so approach starts instantly when run ends
   pendingBattle: null,
   pendingBattlePromise: null,
 
@@ -114,7 +115,7 @@ export const gameScreen = {
     this.canvasHandle = setupCanvas(canvas);
     this.rendererHandle = createRenderer(this.canvasHandle, dungeon);
     this.rendererHandle.setPlayerClass(character.class);
-    this.rendererHandle.setPlayerX(0.2);
+    this.rendererHandle.setPlayerX(0.05);
     this.rendererHandle.setPlayerState('run');
 
     this.loop = createLoop((dt) => {
@@ -140,7 +141,7 @@ export const gameScreen = {
     this.rendererHandle.setMonster(null);
     this.rendererHandle.setSpeedFactor(1);
 
-    // Pre-fetch monster data during run so it's ready the moment the run ends
+    // Pre-fetch monster data during the run so approach starts instantly when run ends
     this.pendingBattle = null;
     this.pendingBattlePromise = api.post('/battles/start', { dungeonId: dungeon.id })
       .then((data) => { this.pendingBattle = data; return data; })
@@ -157,23 +158,21 @@ export const gameScreen = {
     this.startBattle(dungeon, { boss: true });
   },
 
-  // Monster runs from off-screen right toward battle position with a running bounce
-  animateMonsterApproach(monsterName) {
+  // Monster runs from off-screen right to battle position, no bounce — pure horizontal.
+  // approachControl.stopped = true stops the animation mid-way (when monster dies for ranged).
+  animateMonsterApproach(monsterName, approachControl) {
     return new Promise((resolve) => {
       if (this.destroyed) { resolve(); return; }
       const startTime = performance.now();
       const fromX = 1.5;
-      const toX = 0.40;
+      const toX = MONSTER_BATTLE_X;
 
       const tick = () => {
-        if (this.destroyed) { resolve(); return; }
+        if (this.destroyed || approachControl.stopped) { resolve(); return; }
         const t = Math.min(1, (performance.now() - startTime) / APPROACH_DURATION_MS);
-        // ease-out quad — fast start, slows as monster reaches position
-        const ease = 1 - (1 - t) * (1 - t);
+        const ease = 1 - (1 - t) * (1 - t); // ease-out quad
         const x = fromX + (toX - fromX) * ease;
-        // vertical bounce — feet leave ground 5 times during approach, amplitude fades near end
-        const yOffset = -Math.abs(Math.sin(t * Math.PI * 5)) * 8 * (1 - t * 0.7);
-        this.rendererHandle.setMonster({ name: monsterName, hpPct: 1, x, yOffset });
+        this.rendererHandle.setMonster({ name: monsterName, hpPct: 1, x });
         if (t < 1) requestAnimationFrame(tick);
         else resolve();
       };
@@ -186,7 +185,6 @@ export const gameScreen = {
     this.rendererHandle.setPlayerState('idle');
     this.rendererHandle.setSpeedFactor(0);
 
-    // Use pre-fetched data if available (normal battles), otherwise fetch now (boss)
     let startResult;
     try {
       if (!boss && this.pendingBattle) {
@@ -205,7 +203,6 @@ export const gameScreen = {
     }
     if (this.destroyed) return;
 
-    // Simulate battle client-side — instant, no network
     const { outcome, log } = simulateBattle(
       { id: startResult.player.id, stats: startResult.player.stats, skills: startResult.player.skills },
       { id: startResult.monster.id, stats: startResult.monster.stats, skills: startResult.monster.skills || [] }
@@ -213,43 +210,59 @@ export const gameScreen = {
 
     const monsterMaxHp = startResult.monster.stats.hp;
     const { character } = getState();
+    const isRanged = RANGED_CLASSES.has(character.class);
 
-    // Monster runs in from right
+    // Approach control — stopped=true halts the animation (used when monster dies mid-approach)
+    const approachControl = { stopped: false };
     this.rendererHandle.setPlayerHpPct(1);
-    await this.animateMonsterApproach(startResult.monster.name);
-    if (this.destroyed) return;
 
-    // Play battle animation
-    this.battleHandle = playBattleLog({
-      renderer: this.rendererHandle,
-      log,
-      monsterMaxHp,
-      playerMaxHp: character.effectiveStats.hp,
-      onDone: () => {
-        if (this.destroyed) return;
-        this.rendererHandle.setMonster(null);
+    if (isRanged) {
+      // Ranged: monster runs in while player immediately starts attacking
+      this.animateMonsterApproach(startResult.monster.name, approachControl);
 
-        // Report to server in background — don't block the run phase
-        const monsterId = startResult.monster.id;
-        const finishPath = boss
-          ? `/dungeons/${dungeon.id}/boss/finish`
-          : '/battles/finish';
-        const finishBody = boss
-          ? { monsterId, outcome }
-          : { dungeonId: dungeon.id, monsterId, outcome };
+      this.battleHandle = playBattleLog({
+        renderer: this.rendererHandle,
+        log,
+        monsterMaxHp,
+        playerMaxHp: character.effectiveStats.hp,
+        onMonsterDied: () => { approachControl.stopped = true; },
+        onDone: () => this._onBattleDone(dungeon, startResult, outcome, boss),
+      });
+    } else {
+      // Melee: wait for monster to arrive, then fight
+      await this.animateMonsterApproach(startResult.monster.name, approachControl);
+      if (this.destroyed) return;
 
-        api.post(finishPath, finishBody)
-          .then((r) => { if (!this.destroyed) setCharacter({ ...r.character, liveHp: undefined }); })
-          .catch(() => {});
+      this.battleHandle = playBattleLog({
+        renderer: this.rendererHandle,
+        log,
+        monsterMaxHp,
+        playerMaxHp: character.effectiveStats.hp,
+        onDone: () => this._onBattleDone(dungeon, startResult, outcome, boss),
+      });
+    }
 
-        // Immediately continue — no waiting
-        if (boss && outcome === 'win') {
-          this.render();
-        } else {
-          this.runPhase(dungeon);
-        }
-      },
-    });
     this.battleHandle.setMonsterName(startResult.monster.name);
+  },
+
+  _onBattleDone(dungeon, startResult, outcome, boss) {
+    if (this.destroyed) return;
+    this.rendererHandle.setMonster(null);
+
+    const monsterId = startResult.monster.id;
+    const finishPath = boss ? `/dungeons/${dungeon.id}/boss/finish` : '/battles/finish';
+    const finishBody = boss
+      ? { monsterId, outcome }
+      : { dungeonId: dungeon.id, monsterId, outcome };
+
+    api.post(finishPath, finishBody)
+      .then((r) => { if (!this.destroyed) setCharacter({ ...r.character, liveHp: undefined }); })
+      .catch(() => {});
+
+    if (boss && outcome === 'win') {
+      this.render();
+    } else {
+      this.runPhase(dungeon);
+    }
   },
 };

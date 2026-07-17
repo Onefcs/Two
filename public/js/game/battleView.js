@@ -1,8 +1,9 @@
 const PLAYBACK_SPEEDUP = 4;
 
 // Replays a pre-computed battle log against the renderer in (compressed) real time.
+// onMonsterDied fires the moment monster HP hits 0 (use it to stop approach animation).
 // Returns a handle with cancel() to abort if the player navigates away mid-playback.
-export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEvent, onDone }) {
+export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEvent, onMonsterDied, onDone }) {
   let cancelled = false;
   let monsterHp = monsterMaxHp;
   let playerHp = playerMaxHp;
@@ -19,7 +20,6 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
   }
 
   function applyEvent(event) {
-    // Only trigger attack animation if the target is still alive
     if (event.actorSide === 'player' && monsterHp > 0) {
       renderer.setPlayerState('attack');
     }
@@ -27,9 +27,13 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
     if (event.type === 'damage') {
       if (event.targetSide === 'monster') {
         monsterHp = Math.max(0, event.targetHp);
-        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.40 });
+        // Don't pass x — renderer merges, so approach animation keeps ownership of x
+        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp });
         renderer.addFloatingText(`-${event.damage}${event.crit ? '!' : ''}`, event.crit ? '#ffd76a' : '#f2716c', 'monster');
-        if (monsterHp === 0) renderer.setPlayerState('idle');
+        if (monsterHp === 0) {
+          renderer.setPlayerState('idle');
+          onMonsterDied?.();
+        }
       } else {
         playerHp = Math.max(0, event.targetHp);
         renderer.setPlayerHpPct(playerHp / playerMaxHp);
@@ -43,8 +47,11 @@ export function playBattleLog({ renderer, log, monsterMaxHp, playerMaxHp, onEven
     } else if (event.type === 'dot') {
       if (event.targetSide === 'monster') {
         monsterHp = Math.max(0, event.targetHp);
-        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp, x: 0.40 });
-        if (monsterHp === 0) renderer.setPlayerState('idle');
+        renderer.setMonster({ name: currentMonsterName, hpPct: monsterHp / monsterMaxHp });
+        if (monsterHp === 0) {
+          renderer.setPlayerState('idle');
+          onMonsterDied?.();
+        }
       } else {
         playerHp = Math.max(0, event.targetHp);
         renderer.setPlayerHpPct(playerHp / playerMaxHp);
